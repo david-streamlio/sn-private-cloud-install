@@ -1,0 +1,247 @@
+apiVersion: k8s.streamnative.io/v1alpha1
+kind: PulsarCoordinator
+metadata:
+  name: private-cloud
+  namespace: pulsar
+spec:
+  image: streamnative/private-cloud:3.1.1.1
+---
+apiVersion: zookeeper.streamnative.io/v1alpha1
+kind: ZooKeeperCluster
+metadata:
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/path: "/metrics"
+    prometheus.io/port: "8080"
+  name: pulsar-cluster
+  namespace: pulsar
+  labels:
+    k8s.streamnative.io/coordinator-name: private-cloud
+spec:
+  image: streamnative/private-cloud:3.1.1.1
+  replicas: 3
+  pod:
+    resources:
+      requests:
+        cpu: 1
+        memory: 2Gi
+      limits:
+        cpu: 2
+        memory: 4Gi
+    jvmOptions:
+      memoryOptions:
+        - >
+          -XX:MaxRAMPercentage=85
+          -XX:+AlwaysPreTouch
+      gcOptions:
+        - >
+          -XX:+UseZGC
+          -Djute.maxbuffer=10485760
+          -Dzookeeper.forceSync=no
+          -XX:-ZUncommit
+      gcLoggingOptions:
+        - >
+          -Xlog:gc*:file=/tmp/zk_gc.log::filecount=5,filesize=5m
+      extraOptions:
+        - >
+          -XX:CompileThreshold=2000
+    securityContext:
+      runAsNonRoot: true
+  persistence:
+    data:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 100Gi
+        storageClassName: nvme-raid  # Use fastest disks here, e.g. io1
+    dataLog:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 20Gi
+        storageClassName: ssd-raid  # Use SSDs disks here, e.g. gp2 or gp3
+    reclaimPolicy: Delete
+
+---
+apiVersion: bookkeeper.streamnative.io/v1alpha1
+kind: BookKeeperCluster
+metadata:
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/path: "/metrics"
+    prometheus.io/port: "8080"
+  name: pulsar-cluster
+  namespace: pulsar
+  labels:
+    k8s.streamnative.io/coordinator-name: private-cloud
+spec:
+  image: streamnative/private-cloud:3.1.1.1
+  replicas: 11
+  zkServers: pulsar-cluster-zk:2181
+  pod:
+    resources:
+      requests:
+        cpu: 4
+        memory: 16Gi
+      limits:
+        cpu: 4
+        memory: 16Gi
+    jvmOptions:
+      memoryOptions:
+        - >
+          -XX:MaxRAMPercentage=45
+          -XX:+AlwaysPreTouch
+      gcOptions:
+        - >
+          -XX:+UseZGC
+          -Djute.maxbuffer=10485760
+          -Dzookeeper.forceSync=no
+          -XX:-ZUncommit
+      gcLoggingOptions:
+        - >
+          -Xlog:gc*:file=/tmp/bk_gc.log::filecount=5,filesize=5m
+      extraOptions:
+        - >
+          -XX:CompileThreshold=2000
+    securityContext:
+      runAsNonRoot: true
+  storage:
+    journal:
+      numDirsPerVolume: 1
+      numVolumes: 1
+      volumeClaimTemplate:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 100Gi
+        storageClassName: nvme-raid  # Use fastest disks here, e.g. io1 
+    ledger:
+      numDirsPerVolume: 1
+      numVolumes: 1
+      volumeClaimTemplate:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 8192Gi  # 80TB / 10 bookies
+        storageClassName: ssd-raid  # Use SSDs disks here, e.g. gp2 or gp3
+    reclaimPolicy: Delete
+
+---
+apiVersion: pulsar.streamnative.io/v1alpha1
+kind: PulsarBroker
+metadata:
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/path: "/metrics"
+    prometheus.io/port: "8080"
+  name: pulsar-cluster
+  namespace: pulsar
+  labels:
+    k8s.streamnative.io/coordinator-name: private-cloud
+spec:
+  image: streamnative/private-cloud:3.1.1.1
+  replicas: 4
+  autoScalingPolicy:
+    minReplicas: 3
+    maxReplicas: 12
+  zkServers: pulsar-cluster-zk:2181
+  config:
+    clusterName: pulsar
+    protocolHandlers:
+      kop:
+        enabled: true
+  pod:
+    resources:
+      requests:
+        cpu: 4
+        memory: 16Gi
+      limits:
+        cpu: 4
+        memory: 16Gi
+    jvmOptions:
+      memoryOptions:
+        - >
+          -XX:MaxRAMPercentage=45
+          -XX:+AlwaysPreTouch
+      gcOptions:
+        - >
+          -XX:+UseZGC
+          -Djute.maxbuffer=10485760
+          -Dzookeeper.forceSync=no
+          -XX:-ZUncommit
+          -XX:+UseNUMA
+      gcLoggingOptions:
+        - >
+          -Xlog:gc*:file=/tmp/br_gc.log::filecount=5,filesize=5m
+      extraOptions:
+        - >
+          -XX:CompileThreshold=2000
+    securityContext:
+      runAsNonRoot: true
+
+---
+apiVersion: pulsar.streamnative.io/v1alpha1
+kind: PulsarProxy
+metadata:
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/path: "/metrics"
+    prometheus.io/port: "8080"
+  name: pulsar-cluster
+  namespace: pulsar
+  labels:
+    k8s.streamnative.io/coordinator-name: private-cloud
+spec:
+  image: streamnative/private-cloud:3.1.1.1
+  replicas: 2
+  autoScalingPolicy:
+    minReplicas: 1
+    maxReplicas: 3
+  brokerAddress: pulsar-cluster-broker
+  pod:
+    resources:
+      requests:
+        cpu: 1
+        memory: 4Gi
+      limits:
+        cpu: 2
+        memory: 8Gi
+    jvmOptions:
+      memoryOptions:
+        - >
+          -XX:MaxRAMPercentage=45
+          -XX:+AlwaysPreTouch
+      gcOptions:
+        - >
+          -XX:+UseZGC
+          -Djute.maxbuffer=10485760
+          -Dzookeeper.forceSync=no
+          -XX:-ZUncommit
+      gcLoggingOptions:
+        - >
+          -Xlog:gc*:file=/tmp/px_gc.log::filecount=5,filesize=5m
+      extraOptions:
+        - >
+          -XX:CompileThreshold=2000
+    securityContext:
+      runAsNonRoot: true
+
+---
+apiVersion: k8s.streamnative.io/v1alpha1
+kind: Console
+metadata:
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/path: "/metrics"
+    prometheus.io/port: "8080"
+  name: pulsar-cluster
+  namespace: pulsar
+  labels:
+    k8s.streamnative.io/coordinator-name: private-cloud
+spec:
+  image: streamnative/private-cloud-console:v2.3.4
+  webServiceUrl: http://pulsar-cluster-broker:8080
