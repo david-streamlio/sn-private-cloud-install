@@ -28,6 +28,11 @@ Requirements
 
 Ensure you have allocated enough resources to Kubernetes: at least 8Gb.
 
+Next Steps
+------------
+- Refer to the [installation-guide.md](docs%2Finstallation-guide.md) for instructions on how to deploy the cluster
+- Checkout the [monitoring-and-console.md](docs%2Fmonitoring-and-console.md) guide for instructions on configuring monitoring, observability, and admin console access.
+
 
 References
 ---
