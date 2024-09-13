@@ -46,4 +46,4 @@ kubectl get secret --namespace monitor grafana -o jsonpath="{.data.admin-passwor
 J7H8c6ig0vJG6ZDmuJBnDK7XbrCuwFlfWPomOORV
 ```
 
-Then you can access the console UI at `http://192.168.0.102:3000` using 
+Then you can access the console UI at `http://192.168.0.102:3000` using the username `admin` and the password you retrieved in the previous step.
