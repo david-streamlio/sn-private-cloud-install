@@ -9,12 +9,12 @@ spec:
 apiVersion: zookeeper.streamnative.io/v1alpha1
 kind: ZooKeeperCluster
 metadata:
+  name: private-cloud
+  namespace: pulsar
   annotations:
     prometheus.io/scrape: "true"
     prometheus.io/path: "/metrics"
     prometheus.io/port: "8080"
-  name: zookeepers
-  namespace: pulsar
   labels:
     k8s.streamnative.io/coordinator-name: private-cloud
 spec:
@@ -63,23 +63,22 @@ spec:
           storage: 10Gi
       storageClassName: nvme-raid
     reclaimPolicy: Delete
-
 ---
 apiVersion: bookkeeper.streamnative.io/v1alpha1
 kind: BookKeeperCluster
 metadata:
+  name: private-cloud
+  namespace: pulsar
   annotations:
     prometheus.io/scrape: "true"
     prometheus.io/path: "/metrics"
     prometheus.io/port: "8080"
-  name: bookies
-  namespace: pulsar
   labels:
     k8s.streamnative.io/coordinator-name: private-cloud
 spec:
   image: streamnative/private-cloud:3.1.1.1
   replicas: 3
-  zkServers: zookeepers-zk:2181
+  zkServers: private-cloud-zk:2181
   pod:
     resources:
       requests:
@@ -129,38 +128,34 @@ spec:
             storage: 100Gi
         storageClassName: ssd-raid
     reclaimPolicy: Delete
-
+  autoRecovery:
+    replicas: 1
+    pod:
+      annotations:
+        prometheus.io/port: "8000"
+        prometheus.io/scrape: "true"
+      resources:
+        requests:
+          cpu: 500m
+          memory: 1Gi
 ---
 apiVersion: pulsar.streamnative.io/v1alpha1
 kind: PulsarBroker
 metadata:
+  name: private-cloud
+  namespace: pulsar
   annotations:
     prometheus.io/scrape: "true"
     prometheus.io/path: "/metrics"
     prometheus.io/port: "8080"
-  name: brokers
-  namespace: pulsar
   labels:
     k8s.streamnative.io/coordinator-name: private-cloud
 spec:
   image: streamnative/private-cloud:3.1.1.1
   replicas: 3
-  autoScalingPolicy:
-    minReplicas: 1
-    maxReplicas: 5
-  zkServers: zookeepers-zk:2181
+  zkServers: private-cloud-zk:2181
   config:
-    clusterName: pulsar
-    protocolHandlers:
-      kop:
-        enabled: true
-      mop:
-        enabled: true
-        proxyEnabled: true
-      aop:
-        enabled: true
-        proxyEnabled: true
-    pulsarRestMessagingServiceEnabled: true
+    clusterName: private-cloud
   pod:
     resources:
       requests:
@@ -194,21 +189,18 @@ spec:
 apiVersion: pulsar.streamnative.io/v1alpha1
 kind: PulsarProxy
 metadata:
+  name: private-cloud
+  namespace: pulsar
   annotations:
     prometheus.io/scrape: "true"
     prometheus.io/path: "/metrics"
     prometheus.io/port: "8080"
-  name: proxies
-  namespace: pulsar
   labels:
     k8s.streamnative.io/coordinator-name: private-cloud
 spec:
   image: streamnative/private-cloud:3.1.1.1
-  replicas: 2
-  autoScalingPolicy:
-    minReplicas: 1
-    maxReplicas: 3
-  brokerAddress: brokers-broker
+  replicas: 1
+  brokerAddress: private-cloud-broker
   pod:
     resources:
       requests:
@@ -236,19 +228,18 @@ spec:
           -XX:CompileThreshold=2000
     securityContext:
       runAsNonRoot: true
-
 ---
 apiVersion: k8s.streamnative.io/v1alpha1
 kind: Console
 metadata:
+  name: private-cloud
+  namespace: pulsar
   annotations:
     prometheus.io/scrape: "true"
     prometheus.io/path: "/metrics"
     prometheus.io/port: "8080"
-  name: console
-  namespace: pulsar
   labels:
     k8s.streamnative.io/coordinator-name: private-cloud
 spec:
   image: streamnative/private-cloud-console:v2.3.4
-  webServiceUrl: http://brokers-broker:8080
+  webServiceUrl: http://private-cloud-broker:8080
