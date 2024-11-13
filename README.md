@@ -32,6 +32,7 @@ Next Steps
 ------------
 - Refer to the [installation-guide.md](docs%2Finstallation-guide.md) for instructions on how to deploy the cluster
 - Checkout the [monitoring-and-console.md](docs%2Fmonitoring-and-console.md) guide for instructions on configuring monitoring, observability, and admin console access.
+- Follow the [function-mesh-install-guide.md](docs%2Ffunction-mesh-install-guide.md) guide to install the Function Mesh.
 
 
 References
