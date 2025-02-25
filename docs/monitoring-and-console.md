@@ -1,29 +1,43 @@
 StreamNative Monitoring
-------
+-----
 
 
 ### Access the StreamNative Cloud Console
-The StreamNative console is....
+The StreamNative console is
 
 1️⃣ Expose the StreamNative console using the following command
 ```
-kubectl expose svc pulsar-cluster-console --name pulsar-cluster-console-external -n pulsar --port 9527 --target-port 9527 --type LoadBalancer
+kubectl expose svc private-cloud-console --name private-cloud-console-external -n pulsar --port 9527 --target-port 9527 --type LoadBalancer
 ```
 
 Next, run the following command to see what external IP address was assigned to the console.
 
 ```
 kubectl -n $PULSAR_K8S_NAMESPACE get svc | grep console-external
-pulsar-cluster-console-external            LoadBalancer   10.152.183.207   192.168.0.103   9527:30438/TCP
+
+private-cloud-console-external            LoadBalancer   10.152.183.173   192.168.0.202   9527:31589/TCP
 ```
 
-Then you can access the console UI at `http://192.168.0.103:9527` using username/password 
+Then you can access the console UI at `http://192.168.0.202:9527` 
 
 
 
 ### Enable Monitoring and Observability
 
 See the StreamNative [docs](https://docs.streamnative.io/private/private-cloud-monitor#install-monitoring-stacks) for details.
+
+1. Install the latest prometheus server using Helm
+
+```bash
+helm upgrade prometheus prometheus-community/prometheus -n monitor --set alertmanager.enabled=false --set kube-state-metrics.enabled=false --set prometheus-pushgateway.enabled=false
+
+Release "prometheus" has been upgraded. Happy Helming!
+NAME: prometheus
+LAST DEPLOYED: Mon Feb 24 17:57:59 2025
+NAMESPACE: monitor
+STATUS: deployed
+REVISION: 2
+```
 
 1️⃣ Expose the Grafana dashboard using the following command:
 
@@ -47,3 +61,8 @@ J7H8c6ig0vJG6ZDmuJBnDK7XbrCuwFlfWPomOORV
 ```
 
 Then you can access the console UI at `http://192.168.0.102:3000` using the username `admin` and the password you retrieved in the previous step.
+
+Next, configure the Prometheus Server Data source in Grafana using the local IP address of the `prometheus-server`, which can
+be found using the following command: `kubectl -n monitor get svc prometheus-server` as shown here.
+
+![prometheus-server - - Grafana.png](..%2Fimages%2Fprometheus-server%20-%20-%20Grafana.png)
