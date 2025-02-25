@@ -29,7 +29,9 @@ See the StreamNative [docs](https://docs.streamnative.io/private/private-cloud-m
 1. Install the latest prometheus server using Helm
 
 ```bash
-helm upgrade prometheus prometheus-community/prometheus -n monitor --set alertmanager.enabled=false --set kube-state-metrics.enabled=false --set prometheus-pushgateway.enabled=false
+kubectl create ns monitor
+
+helm install prometheus prometheus-community/prometheus -n monitor --set alertmanager.enabled=false --set kube-state-metrics.enabled=false --set prometheus-pushgateway.enabled=false
 
 Release "prometheus" has been upgraded. Happy Helming!
 NAME: prometheus
@@ -39,9 +41,11 @@ STATUS: deployed
 REVISION: 2
 ```
 
-1️⃣ Expose the Grafana dashboard using the following command:
+1️⃣ Install Grafana and expose the Grafana dashboard using the following command:
 
 ```
+helm install grafana grafana/grafana -n monitor --set image.repository=streamnative/private-cloud-grafana --set image.tag=0.1.1
+
 kubectl expose svc grafana --name grafana-external -n monitor --port 3000 --target-port 3000 --type LoadBalancer
 ```
 
