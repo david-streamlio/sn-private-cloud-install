@@ -4,7 +4,7 @@ metadata:
   name: private-cloud
   namespace: pulsar
 spec:
-  image: streamnative/private-cloud:3.1.1.1
+  image: streamnative/private-cloud:4.0.0.6
 ---
 apiVersion: zookeeper.streamnative.io/v1alpha1
 kind: ZooKeeperCluster
@@ -18,7 +18,7 @@ metadata:
   labels:
     k8s.streamnative.io/coordinator-name: private-cloud
 spec:
-  image: streamnative/private-cloud:3.1.1.1
+  image: streamnative/private-cloud:4.0.0.6
   replicas: 3
   pod:
     resources:
@@ -76,8 +76,8 @@ metadata:
   labels:
     k8s.streamnative.io/coordinator-name: private-cloud
 spec:
-  image: streamnative/private-cloud:3.1.1.1
-  replicas: 3
+  image: streamnative/private-cloud:4.0.0.6
+  replicas: 5
   zkServers: private-cloud-zk:2181
   pod:
     resources:
@@ -151,8 +151,8 @@ metadata:
   labels:
     k8s.streamnative.io/coordinator-name: private-cloud
 spec:
-  image: streamnative/private-cloud:3.1.1.1
-  replicas: 3
+  image: streamnative/private-cloud:4.0.0.6
+  replicas: 2
   zkServers: private-cloud-zk:2181
   config:
     clusterName: private-cloud
@@ -202,13 +202,13 @@ metadata:
   labels:
     k8s.streamnative.io/coordinator-name: private-cloud
 spec:
-  image: streamnative/private-cloud:3.1.1.1
+  image: streamnative/private-cloud:4.0.0.6
   replicas: 1
   brokerAddress: private-cloud-broker
   config:
     kopProxy:
       enabled: true
-      kafkaAdvertisedListener: 'private-cloud-proxy.default.svc.cluster.local:9093,192.168.0.200:9093'
+      kafkaAdvertisedListener: 'private-cloud-proxy.default.svc.cluster.local:9093'
   pod:
     resources:
       requests:
@@ -249,5 +249,5 @@ metadata:
   labels:
     k8s.streamnative.io/coordinator-name: private-cloud
 spec:
-  image: streamnative/private-cloud-console:v2.3.4
+  image: streamnative/private-cloud-console:v2.3.9
   webServiceUrl: http://private-cloud-broker:8080
