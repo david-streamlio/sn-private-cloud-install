@@ -1,0 +1,280 @@
+apiVersion: k8s.streamnative.io/v1alpha1
+kind: PulsarCoordinator
+metadata:
+  name: private-cloud
+  namespace: pulsar
+spec:
+  image: streamnative/private-cloud:4.0.4.1
+---
+apiVersion: k8s.streamnative.io/v1alpha1
+kind: OxiaCluster
+metadata:
+  annotations:
+    cloud.streamnative.io/config-profile: default-config-v2
+  labels:
+    k8s.streamnative.io/coordinator-name: private-cloud
+  name: private-cloud
+  namespace: pulsar
+spec:
+  monitoringEnabled: true
+  image: streamnative/oxia:main
+  imagePullPolicy: IfNotPresent
+  server:
+    replicas: 3
+    persistentVolumeClaimRetentionPolicy:
+      whenDeleted: Delete
+---
+apiVersion: k8s.streamnative.io/v1alpha1
+kind: OxiaNamespace
+metadata:
+  name: broker
+  namespace: pulsar
+spec:
+  namespaceConfig:
+    name: broker
+    initialShardCount: 3
+    replicationFactor: 3
+  clusterRef:
+    name: private-cloud
+    namespace: pulsar
+---
+apiVersion: k8s.streamnative.io/v1alpha1
+kind: OxiaNamespace
+metadata:
+  name: bookkeeper
+  namespace: pulsar
+spec:
+  namespaceConfig:
+    name: bookkeeper
+    initialShardCount: 3
+    replicationFactor: 3
+  clusterRef:
+    name: private-cloud
+    namespace: pulsar
+---
+apiVersion: bookkeeper.streamnative.io/v1alpha1
+kind: BookKeeperCluster
+metadata:
+  name: private-cloud
+  namespace: pulsar
+  # For For Oxia based clusters, need to add the default-config-v2 annotation
+  annotations:
+    cloud.streamnative.io/config-profile: default-config-v2
+    prometheus.io/scrape: "true"
+    prometheus.io/path: "/metrics"
+    prometheus.io/port: "8080"
+  labels:
+    k8s.streamnative.io/coordinator-name: private-cloud
+spec:
+  image: streamnative/private-cloud:4.0.4.1
+  replicas: 3
+  # Use the oxia namespace address for bookie metadata
+  metadataServiceUri: metadata-store:oxia://private-cloud-oxia:6648/bookkeeper
+  storage:
+    reclaimPolicy: Delete
+  pod:
+    resources:
+      requests:
+        cpu: 2
+        memory: 8Gi
+      limits:
+        cpu: 3
+        memory: 12Gi
+    jvmOptions:
+      memoryOptions:
+        - >
+          -XX:MaxRAMPercentage=45
+          -XX:+AlwaysPreTouch
+      gcOptions:
+        - >
+          -XX:+UseZGC
+          -Djute.maxbuffer=10485760
+          -Dzookeeper.forceSync=no
+          -XX:-ZUncommit
+      gcLoggingOptions:
+        - >
+          -Xlog:gc*:file=/tmp/bk_gc.log::filecount=5,filesize=5m
+      extraOptions:
+        - >
+          -XX:CompileThreshold=2000
+    securityContext:
+      runAsNonRoot: true
+  storage:
+    journal:
+      numDirsPerVolume: 1
+      numVolumes: 1
+      volumeClaimTemplate:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 30Gi
+        storageClassName: nvme-raid
+    ledger:
+      numDirsPerVolume: 1
+      numVolumes: 1
+      volumeClaimTemplate:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 100Gi
+        storageClassName: ssd-raid
+    reclaimPolicy: Delete
+  autoRecovery:
+    replicas: 1
+    pod:
+      annotations:
+        prometheus.io/port: "8000"
+        prometheus.io/scrape: "true"
+      resources:
+        requests:
+          cpu: 1
+          memory: 1Gi
+---
+apiVersion: pulsar.streamnative.io/v1alpha1
+kind: PulsarBroker
+metadata:
+  name: private-cloud
+  namespace: pulsar
+  # For For Oxia based clusters, need to add the default-config-v2 annotation
+  annotations:
+    cloud.streamnative.io/config-profile: default-config-v2
+    prometheus.io/scrape: "true"
+    prometheus.io/path: "/metrics"
+    prometheus.io/port: "8080"
+  labels:
+    k8s.streamnative.io/coordinator-name: private-cloud
+spec:
+  image: streamnative/private-cloud:4.0.4.1
+  replicas: 3
+  bkMetadataServiceUri: metadata-store:oxia://private-cloud-oxia:6648/bookkeeper
+  # Use the oxia namespace address for broker medata
+  metadataStoreUrl: oxia://private-cloud-oxia:6648/broker
+  # Use the oxia namespace address for broker configuration store
+  configurationMetadataStoreUrl: oxia://private-cloud-oxia:6648/broker
+  config:
+    clusterName: private-cloud
+    function:
+      enabled: false
+      mesh:
+        # Note:
+        # For Oxia based clusters with Function Mesh, need to make the package service with io.streamnative.packages.storage.cloud.CloudStorageProvider.
+        # Otherwise the functions and packages feature should be disabled.
+        uploadEnabled: false
+  pod:
+    resources:
+      requests:
+        cpu: 2
+        memory: 8Gi
+      limits:
+        cpu: 3
+        memory: 12Gi
+    jvmOptions:
+      memoryOptions:
+        - >
+          -XX:MaxRAMPercentage=45
+          -XX:+AlwaysPreTouch
+      gcOptions:
+        - >
+          -XX:+UseZGC
+          -Djute.maxbuffer=10485760
+          -Dzookeeper.forceSync=no
+          -XX:-ZUncommit
+          -XX:+UseNUMA
+      gcLoggingOptions:
+        - >
+          -Xlog:gc*:file=/tmp/br_gc.log::filecount=5,filesize=5m
+      extraOptions:
+        - >
+          -XX:CompileThreshold=2000
+    securityContext:
+      runAsNonRoot: true
+  autoScalingPolicy:
+    minReplicas: 2
+    maxReplicas: 4
+
+---
+apiVersion: pulsar.streamnative.io/v1alpha1
+kind: PulsarProxy
+metadata:
+  name: private-cloud
+  namespace: pulsar
+  # For For Oxia based clusters, need to add the default-config-v2 annotation
+  annotations:
+    cloud.streamnative.io/config-profile: default-config-v2
+    prometheus.io/scrape: "true"
+    prometheus.io/path: "/metrics"
+    prometheus.io/port: "8080"
+  labels:
+    k8s.streamnative.io/coordinator-name: private-cloud
+spec:
+  image: streamnative/private-cloud:4.0.4.1
+  replicas: 1
+  brokerAddress: private-cloud-broker
+  pod:
+    resources:
+      requests:
+        cpu: 1
+        memory: 4Gi
+      limits:
+        cpu: 2
+        memory: 8Gi
+    jvmOptions:
+      memoryOptions:
+        - >
+          -XX:MaxRAMPercentage=45
+          -XX:+AlwaysPreTouch
+      gcOptions:
+        - >
+          -XX:+UseZGC
+          -Djute.maxbuffer=10485760
+          -Dzookeeper.forceSync=no
+          -XX:-ZUncommit
+      gcLoggingOptions:
+        - >
+          -Xlog:gc*:file=/tmp/px_gc.log::filecount=5,filesize=5m
+      extraOptions:
+        - >
+          -XX:CompileThreshold=2000
+    securityContext:
+      runAsNonRoot: true
+  autoScalingPolicy:
+    minReplicas: 1
+    maxReplicas: 2
+---
+apiVersion: k8s.streamnative.io/v1alpha1
+kind: Console
+metadata:
+  name: private-cloud
+  namespace: pulsar
+  labels:
+    k8s.streamnative.io/coordinator-name: private-cloud
+spec:
+  image: streamnative/private-cloud-console:v2.3.13
+  webServiceUrl: http://private-cloud-broker:8080
+
+# Adding a LoadBalancer in front of the Console
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: private-cloud-console-lb
+  namespace: pulsar
+  labels:
+    app: private-cloud-console-lb
+spec:
+  selector:
+    cloud.streamnative.io/app: pulsar
+    cloud.streamnative.io/cluster: private-cloud
+    cloud.streamnative.io/component: console
+  type: LoadBalancer
+  ports:
+    - name: backend
+      protocol: TCP
+      port: 7750
+      targetPort: 7750
+    - name: frontend
+      protocol: TCP
+      port: 9527
+      targetPort: 9527
