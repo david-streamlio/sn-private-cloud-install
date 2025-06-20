@@ -18,8 +18,7 @@ to support the setup and management components of:
 - **Connector Catalog**: a catalog for function-mesh-worker-service to retrieve the list of connectors.
 - **Oxia**: a scalable metadata store and coordination system that can be used as the core infrastructure to build large scale distributed systems.
 
-![SN Private Cloud](images/private-cloud-arch.png)
-
+![private-cloud-arch.png](docs%2Fimages%2Fstreamntive%2Fprivate-cloud-arch.png)
 Requirements
 ------------
 - kubectl (v1.16 or higher), compatible with your cluster (+/- 1 minor release from your cluster).
