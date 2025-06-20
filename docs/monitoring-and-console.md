@@ -1,27 +1,6 @@
 StreamNative Monitoring
 -----
 
-
-### Access the StreamNative Cloud Console
-The StreamNative console is
-
-1️⃣ Expose the StreamNative console using the following command
-```
-kubectl expose svc private-cloud-console --name private-cloud-console-external -n pulsar --port 9527 --target-port 9527 --type LoadBalancer
-```
-
-Next, run the following command to see what external IP address was assigned to the console.
-
-```
-kubectl -n $PULSAR_K8S_NAMESPACE get svc | grep console-external
-
-private-cloud-console-external            LoadBalancer   10.152.183.173   192.168.0.202   9527:31589/TCP
-```
-
-Then you can access the console UI at `http://192.168.0.202:9527` 
-
-
-
 ### Enable Monitoring and Observability
 
 See the StreamNative [docs](https://docs.streamnative.io/private/private-cloud-monitor#install-monitoring-stacks) for details.

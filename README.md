@@ -1,6 +1,6 @@
 # Getting Started with StreamNative Private Cloud
 
-This repository contains a collection of instructions the guide you through the process
+This repository contains a c ollection of instructions the guide you through the process
 of installing StreamNative's Private Cloud offering.
 
 StreamNative Private Cloud is an enterprise product which brings specific controllers for Kubernetes by 
@@ -30,9 +30,10 @@ Ensure you have allocated enough resources to Kubernetes: at least 8Gb.
 
 Next Steps
 ------------
-- Refer to the [installation-guide.md](docs%2Finstallation-guide.md) for instructions on how to deploy the cluster
+- Refer to the [streamnative-installation-guide.md](docs%2Fstreamnative-installation-guide.md) for instructions on how to deploy the cluster
 - Checkout the [monitoring-and-console.md](docs%2Fmonitoring-and-console.md) guide for instructions on configuring monitoring, observability, and admin console access.
 - Follow the [function-mesh-install-guide.md](docs%2Ffunction-mesh-install-guide.md) guide to install the Function Mesh.
+- Refer to the [ververica-installation-guide.md](docs%2Fververica-installation-guide.md) guide to install Flink 
 
 
 References

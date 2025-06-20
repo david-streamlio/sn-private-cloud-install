@@ -1,3 +1,5 @@
-license.yaml
+StreamNative/license.yaml
 
-**/sn-private-cloud-install.iml
+StreamNative/license.yaml
+
+/ververica/values-license.yaml
