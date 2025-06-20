@@ -1,0 +1,284 @@
+alert_manager:
+  config:
+    global:
+      resolve_timeout: 1m
+    receivers:
+    - name: pagerduty-notifications
+      pagerduty_configs:
+      - routing_key: 7ff97ca1c8e04e09d083d889caf53bd8
+        send_resolved: true
+        severity: '{{ if .CommonLabels.severity }}{{ .CommonLabels.severity | toLower
+          }}{{ else }}error{{ end }}'
+    route:
+      group_by:
+      - alertname
+      group_interval: 1m
+      receiver: pagerduty-notifications
+      repeat_interval: 10m
+  resources:
+    limits:
+      cpu: 200m
+      memory: 500Mi
+    requests:
+      cpu: 120m
+      memory: 200Mi
+  rules:
+    groups:
+    - name: node
+      rules:
+      - alert: InstanceDown
+        annotations:
+          description: '{{ $labels.kubernetes_pod_name }} of job {{ $labels.job }}
+            has been down for more than 5 minutes.'
+          summary: Instance {{ $labels.kubernetes_pod_name }} down.
+        expr: up{app="pulsar"} == 0
+        for: 5m
+        labels:
+          severity: critical
+      - alert: CpuUsage
+        annotations:
+          summary: 'Instance {{ $labels.instance }} has high CPU usage: {{ $value
+            }}%'
+        expr: 100 * (1 - avg by(instance)(rate(node_cpu_seconds_total{mode='idle'}[1m])))
+          > 85
+        for: 5m
+        labels:
+          severity: warning
+      - alert: PersistentVolumeSpace
+        annotations:
+          summary: 'Space used on {{ $labels.persistentvolumeclaim }} is above the
+            critical threshold -- value: {{ $value }}%'
+        expr: 100 * (1 - (kubelet_volume_stats_available_bytes / kubelet_volume_stats_capacity_bytes))
+          > 85
+        for: 5m
+        labels:
+          severity: critical
+      - alert: HighIOUtils
+        annotations:
+          description: High IO utils on instance {{ $labels.instance }} of job {{
+            $labels.job }} over than 80%, current value is {{ $value }}%
+          summary: High IO utils.
+        expr: irate(node_disk_io_time_seconds_total{mountpoint!~"\\/host\\/sys.*"}[1m])
+          > 0.8
+        for: 5m
+        labels:
+          severity: warning
+      - alert: HighDiskUsage
+        annotations:
+          description: High IO utils on instance {{ $labels.instance }} of job {{
+            $labels.job }} over than 90%, current value is {{ $value }}%
+          summary: High disk usage
+        expr: (node_filesystem_size_bytes{mountpoint!~"\\/host\\/sys.*"} - node_filesystem_avail_bytes{mountpoint!~"\\/host\\/sys.*"})  /
+          node_filesystem_size_bytes{mountpoint!~"\\/host\\/sys.*"} > 0.9
+        for: 5m
+        labels:
+          severity: warning
+      - alert: FilesystemAvailableSpace
+        annotations:
+          description: Available disk space on instance {{ $labels.instance }} is
+            lower than 2GB, current value is {{ $value }}%
+          summary: Node disk available space is low
+        expr: node_filesystem_avail_bytes{mountpoint!~"\\/host\\/sys.*"} < 2147483648
+        for: 5m
+        labels:
+          severity: warning
+      - alert: HighInboundNetwork
+        annotations:
+          description: High inbound network on instance {{ $labels.instance }} of
+            job {{ $labels.job }} over than 512MB/s, current value is {{ $value }}/s
+          summary: High inbound network
+        expr: rate(node_network_receive_bytes_total{instance="$instance", device!="lo"}[30s])
+          or irate(node_network_receive_bytes_total{instance="$instance", device!="lo"}[30s])
+          / 1024 / 1024 > 512
+        for: 5m
+        labels:
+          severity: warning
+    - name: zookeeper
+      rules:
+      - alert: HighWatchers
+        annotations:
+          description: Watchers of Zookeeper server {{ $labels.kubernetes_pod_name
+            }} is over than 1000k, current value is {{ $value }}.
+          summary: Watchers of Zookeeper server is over than 1000k.
+        expr: zookeeper_server_watches_count{job="zookeeper"} > 1000000
+        for: 5m
+        labels:
+          severity: warning
+      - alert: HighEphemerals
+        annotations:
+          description: Ephemeral nodes of Zookeeper server {{ $labels.kubernetes_pod_name
+            }} is over than 10k, current value is {{ $value }}.
+          summary: Ephemeral nodes of Zookeeper server is over than 10k.
+        expr: zookeeper_server_ephemerals_count{job="zookeeper"} > 10000
+        for: 5m
+        labels:
+          severity: warning
+      - alert: HighConnections
+        annotations:
+          description: Connections of Zookeeper server {{ $labels.kubernetes_pod_name
+            }} is over than 10k, current value is {{ $value }}.
+          summary: Connections of Zookeeper server is over than 10k.
+        expr: zookeeper_server_connections{job="zookeeper"} > 10000
+        for: 5m
+        labels:
+          severity: warning
+      - alert: HighDataSize
+        annotations:
+          description: Data size of Zookeeper server {{ $labels.instance }} is over
+            than 2GB, current value is {{ $value }}.
+          summary: Data size of Zookeeper server is over than 2GB.
+        expr: zookeeper_server_data_size_bytes{job="zookeeper"} > 2147483648
+        for: 5m
+        labels:
+          severity: warning
+      - alert: HighRequestThroughput
+        annotations:
+          description: Request throughput of {{ $labels.type}} on Zookeeper server
+            {{ $labels.instance }} is over than 1k, current value is {{ $value }}.
+          summary: Request throughput on Zookeeper server is over than 1000 in 5m.
+        expr: sum(irate(zookeeper_server_requests{job="zookeeper"}[30s])) by (type)
+          > 1000
+        for: 5m
+        labels:
+          severity: warning
+      - alert: HighRequestLatency
+        annotations:
+          description: Request latency {{ $labels.type }} in p99 on Zookeeper server
+            {{ $labels.instance }} is over than 100ms, current value is {{ $value
+            }} ms.
+          summary: Request latency on Zookeeper server is over than 100ms.
+        expr: zookeeper_server_requests_latency_ms{job="zookeeper", quantile="0.99"}
+          > 100
+        for: 5m
+        labels:
+          severity: error
+    - name: bookie
+      rules:
+      - alert: HighEntryAddLatency
+        annotations:
+          description: Entry add latency on bookie {{ $labels.instance }} is over
+            than 200ms, current value is {{ $value }}.
+          summary: Entry add latency is over than 200ms
+        expr: bookkeeper_server_ADD_ENTRY_REQUEST{job="bookie", quantile="0.99", success="true"}
+          > 200
+        for: 5m
+        labels:
+          severity: warning
+      - alert: HighEntryAddLatencyError
+        annotations:
+          description: Entry add latency on bookie {{ $labels.instance }} is over
+            than 500ms, current value is {{ $value }}.
+          summary: Entry add latency is over than 500ms
+        expr: bookkeeper_server_ADD_ENTRY_REQUEST{job="bookie", quantile="0.99", success="true"}
+          > 500
+        for: 10m
+        labels:
+          severity: error
+      - alert: HighEntryReadLatency
+        annotations:
+          description: Entry read latency on bookie {{ $labels.instance }} is over
+            than 1s, current value is {{ $value }}.
+          summary: Entry read latency is over than 1s
+        expr: bookkeeper_server_READ_ENTRY_REQUEST{job="bookie", quantile="0.99",
+          success="true"} > 1000
+        for: 5m
+        labels:
+          severity: warning
+    - name: broker
+      rules:
+      - alert: HighStorageWriteLatency
+        annotations:
+          description: Pulsar storage write latency is over than 1s on topic {{ $labels.topic
+            }}, current value is {{ $value }}.
+          summary: Pulsar storage write latency is over than 1s
+        expr: pulsar_storage_write_latency_le_1000{job="broker"} > 1000
+        for: 5m
+        labels:
+          severity: warning
+      - alert: HighStorageWriteLatencyError
+        annotations:
+          description: Pulsar storage write latency is over than 1s on topic {{ $labels.topic
+            }}, current value is {{ $value }}.
+          summary: Pulsar storage write latency is over than 1s
+        expr: pulsar_storage_write_latency_le_1000{job="broker"} > 1000
+        for: 10m
+        labels:
+          severity: error
+      - alert: TooManyTopics
+        annotations:
+          description: Topic count in cluster {{ $labels.cluster }} is more than 1000000,
+            current value is {{ $value }}.
+          summary: Topic count are over than 1000000.
+        expr: sum(pulsar_topics_count{job="broker"}) by (cluster) > 1000000
+        for: 5m
+        labels:
+          severity: warning
+      - alert: TooManyProducersOnTopic
+        annotations:
+          description: Producers on topic {{ $labels.topic }} is more than 10000,
+            current value is {{ $value }}.
+          summary: Producers on topic are more than 10000.
+        expr: pulsar_producers_count > 10000
+        for: 5m
+        labels:
+          severity: warning
+      - alert: TooManySubscriptionsOnTopic
+        annotations:
+          description: Subscriptions on topic {{ $labels.topic }} is more than 10000,
+            current value is {{ $value }}.
+          summary: Subscriptions on topic are more than 10000.
+        expr: pulsar_subscriptions_count > 10000
+        for: 5m
+        labels:
+          severity: warning
+      - alert: TooManyConsumersOnTopic
+        annotations:
+          description: Consumers on topic {{ $labels.topic }} is more than 10000 ,
+            current value is {{ $value }}.
+          summary: Consumers on topic are more than 10000.
+        expr: pulsar_consumers_count > 10000
+        for: 5m
+        labels:
+          severity: warning
+      - alert: HighTopicGeoBacklog
+        annotations:
+          description: High Number of messages in the geo-replication backlog of topic
+            {{ $labels.topic }} is more than 1000000, current value is {{ $value }}.
+          summary: High number of messages in topic geo replication backlog.
+        expr: pulsar_replication_backlog > 1000000
+        for: 5m
+        labels:
+          severity: warning
+    - name: logging
+      rules:
+      - alert: TooManyErrorMessages
+        annotations:
+          description: Too many error messages found for pod {{ $labels.kubernetes_pod_name
+            }}
+          summary: Too manay error messages found per process
+        expr: increase(log4j2_appender_total{level="error"}[1m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+    - name: jvm
+      rules:
+      - alert: JvmHeapLimit
+        annotations:
+          description: JVM heap memory usage of {{ $labels.kubernetes_pod_name }}
+            - {{ $value }} is larger than 95%
+          summary: High JVM heap memory usage
+        expr: (100 * jvm_memory_bytes_used{area="heap"} / jvm_memory_bytes_max{area="heap"})
+          > 95
+        for: 5m
+        labels:
+          severity: error
+      - alert: JvmDirectMemLimit
+        annotations:
+          description: JVM direct memory usage of {{ $labels.kubernetes_pod_name }}
+            - {{ $value }} is larger than 95%
+          summary: High JVM direct memory usage
+        expr: (100 * jvm_memory_direct_bytes_used / jvm_memory_direct_bytes_max) >
+          95
+        for: 5m
+        labels:
+          severity: error

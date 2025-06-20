@@ -1,0 +1,20 @@
+# Adding a LoadBalancer in front of the Console
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ververica-ui-lb
+  namespace: vvp
+  labels:
+    app: ververica-ui-lb
+spec:
+  selector:
+    app: vvp-ververica-platform
+    system: ververica-platform
+    component: ververica-platform
+  type: LoadBalancer
+  ports:
+    - name: frontend
+      protocol: TCP
+      port: 80
+      targetPort: 8080

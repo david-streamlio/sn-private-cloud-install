@@ -5,8 +5,45 @@ This guide covers how to use StreamNative's Platform K8s operators to provision 
 If you haven't already installed the operators, please refer to the [installation guide](https://docs.streamnative.io/private/private-cloud-quickstart)
 for details.
 
+### 1. Create the operators namespace
+First, you need to create a Kubernetes namespace for the StreamNative operators to run inside. 
 
-### Provision a Pulsar cluster
+```bash
+kubectl create namespace operators
+```
+
+### 2. Import license
+
+Before installing StreamNative Private Cloud, you need to import a valid license. Otherwise, StreamNative Private Cloud 
+will stop reconciling with a "no valid license" error message. Running the following command will create a K8s secret
+containing a valid license key in the `operators` namespace that we created in the previous step.
+
+```bash
+kubectl apply -f configs/StreamNative/license.yaml
+```
+
+### 3. Install the StreamNative Operator
+
+1️⃣ Add the StreamNative chart repository.
+
+```bash
+helm repo add streamnative https://charts.streamnative.io
+helm repo update
+```
+
+2️⃣ Deploy the StreamNative Operator using the sn-operator Helm chart.
+
+```bash
+helm install sn-operator streamnative/sn-operator -n operators
+```
+
+3️⃣ Verify that the operator pods are up and running.
+
+```bash
+kubectl get all -n operators
+```
+
+### 4. Provision a Pulsar cluster
 The Pulsar Operator provides full lifecycle management for all the components within a Pulsar cluster. You can use it
 to create, upgrade, and scale a cluster. This section covers how to deploy a Pulsar cluster on Kubernetes using the
 Pulsar Operators by applying a single YAML file that contains the Custom Resources (CRs) of all the components required
@@ -22,7 +59,7 @@ kubectl create namespace $PULSAR_K8S_NAMESPACE
 2️⃣ Install Pulsar
 
 ```bash
-kubectl apply -f ./configs/01_pulsar-cluster.yaml --wait --namespace $PULSAR_K8S_NAMESPACE
+kubectl apply -f ./configs/StreamNative/01_pulsar-cluster.yaml --wait --namespace $PULSAR_K8S_NAMESPACE
 
 pulsarcoordinator.k8s.streamnative.io/private-cloud created
 zookeepercluster.zookeeper.streamnative.io/private-cloud created
@@ -78,7 +115,7 @@ statefulset.apps/private-cloud-zk                 3/3     2m39s
 ```
 
 
-4 Run a smoke test to confirm that the Pulsar cluster is functional
+### 5. Run a smoke test to confirm that the Pulsar cluster is functional
 
 ```bash
 kubectl exec -it -n pulsar pod/private-cloud-toolset-0 /pulsar/bin/pulsar-perf produce persistent://public/default/test
