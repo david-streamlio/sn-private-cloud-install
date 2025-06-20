@@ -1,0 +1,17 @@
+kind: Deployment
+apiVersion: v1
+metadata:
+  displayName: "Window Join"
+  name: window-joining
+  namespace: default
+spec:
+  deploymentTargetName: vvp-jobs
+  template:
+    spec:
+      parallelism: 1
+      artifact:
+        kind: JAR
+        flinkVersion: '1.20.1'
+        jarUri: >-
+          https://repo1.maven.org/maven2/org/apache/flink/flink-examples-streaming/1.20.1/flink-examples-streaming-1.20.1-WindowJoin.jar
+

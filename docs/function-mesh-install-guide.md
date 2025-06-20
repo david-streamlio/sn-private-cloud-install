@@ -13,7 +13,7 @@ processors are long running processes. They are auto-scaled based on the workloa
 A FunctionMesh can be either a Directed Acyclic Graph (DAG) or a cyclic graph of functions and/or connectors connected 
 with streams.
 
-![function-mesh-diagram.png](..%2Fimages%2Ffunction-mesh%2Ffunction-mesh-diagram.png)
+![function-mesh-diagram.png](images%2Ffunction-mesh%2Ffunction-mesh-diagram.png)
 
 ## APIs
 Function Mesh APIs build on existing Kubernetes APIs, so that Function Mesh resources are compatible with other 
@@ -22,7 +22,7 @@ Kubernetes-native resources, and can be managed by cluster administrators using 
 The benefit of this approach is both the function metadata and function running state are directly stored and managed by
 Kubernetes to avoid the inconsistency problem that was seen using Pulsar's existing Kubernetes scheduler.
 
-![function-mesh-internals.png](..%2Fimages%2Ffunction-mesh%2Ffunction-mesh-internals.png)
+![function-mesh-internals.png](images%2Ffunction-mesh%2Ffunction-mesh-internals.png)
 
 Requirements
 ------------

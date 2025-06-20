@@ -48,4 +48,4 @@ Then you can access the console UI at `http://192.168.0.102:3000` using the user
 Next, configure the Prometheus Server Data source in Grafana using the local IP address of the `prometheus-server`, which can
 be found using the following command: `kubectl -n monitor get svc prometheus-server` as shown here.
 
-![prometheus-server - - Grafana.png](..%2Fimages%2Fprometheus-server%20-%20-%20Grafana.png)
+![prometheus-server - - Grafana.png](images%2Fgrafana%2Fprometheus-server%20-%20-%20Grafana.png)

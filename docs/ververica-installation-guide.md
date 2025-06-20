@@ -16,7 +16,7 @@ kubectl create namespace vvp-jobs
 In addition to Ververica Platform, we will set up MinIO in the vvp namespace, which will be used for artifact storage 
 and Apache Flink® checkpoints & savepoints as shown in diagram below:
 
-![Ververica-Deployment.png](..%2Fimages%2Fververica%2FVerverica-Deployment.png)
+![Ververica-Deployment.png](images%2Fververica%2FVerverica-Deployment.png)
 
 If you have never added the stable Helm repository, first use the following command to add it
 
@@ -83,4 +83,44 @@ kubectl apply -f configs/ververica/webui-load-balancer.yaml
 
 The web interface and API are now available at 192.168.0.204:8080 as shown here:
 
-![Ververica-UI.png](..%2Fimages%2Fververica%2FVerverica-UI.png)
+![Ververica-UI.png](images%2Fververica%2FVerverica-UI.png)
+
+### 5. Run a Flink Job to confirm that the cluster is functional
+To do this, we will need to create and manage a Ververica Platform Deployment based on a JAR that packages an Apache Flink® 
+DataStream, DataSet or Table API program. 
+
+
+1️⃣ Create a Flink Deployment
+Deployments are the core resource to manage Apache Flink® jobs within Ververica Platform. A Deployment specifies the 
+desired state of an application and its configuration. At the same time, Ververica Platform tracks and reports each 
+Deployment’s status and derives other resources from it. Whenever the Deployment specification is modified, Ververica 
+Platform will ensure the running application will eventually reflect this change.
+
+For this we will use the REST API to create the job using the following command:
+
+```bash
+curl 192.168.0.204/api/v1/namespaces/default/deployment-targets \
+         -X POST \
+         -H "Content-Type: application/yaml" \
+         -H "Accept: application/yaml" \
+         --data-binary @configs/ververica/deployments/deployment_target.yaml
+```
+
+Afterward, you can use the Ververica Platform REST API to create the Deployment with the following commnad:
+
+```bash
+curl 192.168.0.204/api/v1/namespaces/default/deployments \
+         -X POST \
+         -H "Content-Type: application/yaml" \
+         -H "Accept: application/yaml" \
+         --data-binary @configs/ververica/deployments/deployment.yaml
+```
+
+Ververica Platform will now create a highly available Flink cluster, which runs your Flink application in the vvp-jobs 
+Kubernetes namespace. You can then go to the UI to confirm that the Flink job was successfully deployed.
+
+![Ververica-Deployments.png](images%2Fververica%2FVerverica-Deployments.png)
+
+Once the Deployment has reached the RUNNING state you can also check out the details in the Flink UI.
+
+![Ververica Deployment-Details.png](images%2Fververica%2FVerverica%20Deployment-Details.png)

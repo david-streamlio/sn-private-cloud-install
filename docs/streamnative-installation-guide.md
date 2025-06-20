@@ -59,7 +59,7 @@ kubectl create namespace $PULSAR_K8S_NAMESPACE
 2️⃣ Install Pulsar
 
 ```bash
-kubectl apply -f ./configs/StreamNative/01_pulsar-cluster.yaml --wait --namespace $PULSAR_K8S_NAMESPACE
+kubectl apply -f ./configs/streamnative/01_pulsar-cluster.yaml --wait --namespace $PULSAR_K8S_NAMESPACE
 
 pulsarcoordinator.k8s.streamnative.io/private-cloud created
 zookeepercluster.zookeeper.streamnative.io/private-cloud created
