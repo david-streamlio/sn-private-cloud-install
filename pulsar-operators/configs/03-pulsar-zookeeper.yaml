@@ -1,0 +1,307 @@
+# StreamNative Private Cloud — ZooKeeper-backed cluster (full-featured).
+#
+# Chosen over Oxia because Oxia v2 does NOT support function package management
+# (the BookKeeper package store needs ZooKeeper for its DistributedLog namespace).
+# ZK enables jar/nar package management (no MinIO) + Function-Mesh jar functions.
+#
+# Carries the same hardening as the Oxia manifest: JWT auth, broker TLS (cert-manager),
+# broker HPA, required anti-affinity (zk/bookie) + broker topologySpread.
+#
+#   kubectl apply -f ./pulsar-operators/configs/03-pulsar-zookeeper.yaml
+#
+apiVersion: k8s.streamnative.io/v1alpha1
+kind: PulsarCoordinator
+metadata:
+  name: private-cloud
+  namespace: pulsar
+spec:
+  image: streamnative/private-cloud:4.2.1.4
+---
+apiVersion: zookeeper.streamnative.io/v1alpha1
+kind: ZooKeeperCluster
+metadata:
+  name: private-cloud
+  namespace: pulsar
+  labels:
+    k8s.streamnative.io/coordinator-name: private-cloud
+spec:
+  image: streamnative/private-cloud:4.2.1.4
+  replicas: 3
+  pod:
+    resources:
+      requests:
+        cpu: 300m
+        memory: 1Gi
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                cloud.streamnative.io/cluster: private-cloud
+                cloud.streamnative.io/component: zookeeper
+            topologyKey: kubernetes.io/hostname
+    securityContext:
+      runAsNonRoot: true
+  persistence:
+    data:
+      accessModes: [ReadWriteOnce]
+      storageClassName: nvme-raid
+      resources:
+        requests:
+          storage: 8Gi
+    dataLog:
+      accessModes: [ReadWriteOnce]
+      storageClassName: nvme-raid
+      resources:
+        requests:
+          storage: 2Gi
+    reclaimPolicy: Delete
+---
+apiVersion: bookkeeper.streamnative.io/v1alpha1
+kind: BookKeeperCluster
+metadata:
+  name: private-cloud
+  namespace: pulsar
+  labels:
+    k8s.streamnative.io/coordinator-name: private-cloud
+spec:
+  image: streamnative/private-cloud:4.2.1.4
+  replicas: 3
+  zkServers: private-cloud-zk:2181
+  pod:
+    resources:
+      requests:
+        cpu: "1"
+        memory: 4Gi
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                cloud.streamnative.io/cluster: private-cloud
+                cloud.streamnative.io/component: bookie
+            topologyKey: kubernetes.io/hostname
+    securityContext:
+      runAsNonRoot: true
+  storage:
+    journal:
+      numDirsPerVolume: 1
+      numVolumes: 1
+      volumeClaimTemplate:
+        accessModes: [ReadWriteOnce]
+        storageClassName: nvme-raid
+        resources:
+          requests:
+            storage: 30Gi
+    ledger:
+      numDirsPerVolume: 1
+      numVolumes: 1
+      volumeClaimTemplate:
+        accessModes: [ReadWriteOnce]
+        storageClassName: ssd-raid
+        resources:
+          requests:
+            storage: 100Gi
+    reclaimPolicy: Delete
+  autoRecovery:
+    replicas: 1
+    pod:
+      resources:
+        requests:
+          cpu: 200m
+          memory: 512Mi
+---
+apiVersion: pulsar.streamnative.io/v1alpha1
+kind: PulsarBroker
+metadata:
+  name: private-cloud
+  namespace: pulsar
+  annotations:
+    cloud.streamnative.io/enable-config-prefix: "false"
+  labels:
+    k8s.streamnative.io/coordinator-name: private-cloud
+spec:
+  image: streamnative/private-cloud:4.2.1.4
+  replicas: 2
+  zkServers: private-cloud-zk:2181
+  # Operator-managed HPA (CPU 60%, 2-6 replicas).
+  autoScalingPolicy:
+    minReplicas: 2
+    maxReplicas: 6
+    metrics:
+      - type: Resource
+        resource:
+          name: cpu
+          target:
+            type: Utilization
+            averageUtilization: 60
+  # Broker TLS (web 8443 + binary pulsar+ssl://6651) via cert-manager.
+  tls:
+    enabled: true
+    certSecretName: pulsar-server-tls
+    trustCertsEnabled: true
+  # External Kafka (KSN) via the Istio ingress gateway (TLS PASSTHROUGH, per-broker SNI).
+  # Clients reach broker-N.kafka.private-cloud.internal:9093 (SASL_SSL+token); the gateway SNI-routes to the
+  # broker's external KSN listener on :9095 which terminates TLS with kafka-broker-tls.
+  # REQUIRES the per-pod ServiceEntries in 04-ksn-istio-gateway.yaml — the operator does NOT
+  # generate them for advertisedListeners[].istioGateway (see docs/ksn-istio-gateway-bug-report.md).
+  # hostTemplate uses $(POD_NAME) (NOT $(POD_ID), which isn't a broker env var); containerPort
+  # 9095 is distinct from the internal KSN 9092; pulsar protocol disabled to avoid a 6651 double-bind.
+  advertisedListeners:
+    - name: external
+      hostTemplate: "$(POD_NAME).kafka.private-cloud.internal"
+      protocols:
+        pulsar:
+          enabled: false
+        kafka:
+          enabled: true
+          scheme: SASL_SSL
+          advertisedPort: 9093
+          containerPort: 9095
+      istioGateway:
+        clusterAddress: kafka.private-cloud.internal
+        selector:
+          istio: ingressgateway
+        tls:
+          mode: PASSTHROUGH
+  config:
+    clusterName: private-cloud
+    # Kafka protocol (KSN). Internal clients use SASL_PLAINTEXT on :9092; the external
+    # listener (above) uses SASL_SSL on :9095. SASL/PLAIN auth: password "token:<jwt>".
+    # kop.tls gives the external listener a JKS keystore (KSN needs JKS, not PEM).
+    protocolHandlers:
+      kop:
+        enabled: true
+        saslAllowedMechanisms: [PLAIN]
+        tls:
+          enabled: true
+          certSecretName: kafka-broker-tls
+          trustCertsEnabled: true
+          clientAuth: none
+          passwordSecretRef:
+            name: kafka-keystore-pass
+            key: password
+      # MQTT protocol (MoP). proxyEnabled exposes MQTT through the Pulsar proxy for
+      # external clients (the MoP proxy ships in this image, unlike the KoP proxy).
+      # Default broker MQTT listener :1883 (plaintext); external clients reach it via the
+      # proxy LB. Auth uses the cluster JWT (MQTT CONNECT password = the token).
+      mop:
+        enabled: true
+        proxyEnabled: true
+    # Orca / Function Mesh Worker Service (FMWS): the bundled mesh-worker-service NAR
+    # turns the broker's functions-worker into a translator — `pulsar-admin/snctl
+    # functions create --jar` becomes a Function Mesh `Function` CRD (no hand-written
+    # CRDs, no per-function image build; jar lives in package management). The operator's
+    # `function.mesh` field alone does NOT wire the NAR — inject it via customWorkerConfig.
+    # FMWS auto-propagates the caller's auth token into each function it creates.
+    function:
+      enabled: true
+      customWorkerConfig: |
+        functionsWorkerServiceNarPackage: /pulsar/lib/mesh-worker-service.nar
+        functionsWorkerServiceCustomConfigs:
+          uploadEnabled: true
+          functionEnabled: true
+          sinkEnabled: true
+          sourceEnabled: true
+          functionRunnerImages:
+            JAVA: streamnative/pulsar-functions-java-runner:4.2.1.4
+            PYTHON: streamnative/pulsar-functions-python-runner:4.2.1.4
+            GO: streamnative/pulsar-functions-go-runner:4.2.1.4
+    # JWT/token auth internal client identity.
+    clientAuth:
+      jwt:
+        secret: broker-admin
+    custom:
+      # Package management works on ZK (BookKeeper store) — no MinIO.
+      PULSAR_PREFIX_enablePackagesManagement: "true"
+      # --- JWT/token authentication ---
+      PULSAR_PREFIX_authenticationEnabled: "true"
+      PULSAR_PREFIX_authenticateOriginalAuthData: "true"
+      PULSAR_PREFIX_authenticationProviders: org.apache.pulsar.broker.authentication.AuthenticationProviderToken
+      PULSAR_PREFIX_authorizationEnabled: "true"
+      PULSAR_PREFIX_authorizationProvider: org.apache.pulsar.broker.authorization.PulsarAuthorizationProvider
+      PULSAR_PREFIX_superUserRoles: broker-admin,proxy-admin
+      PULSAR_PREFIX_proxyRoles: proxy-admin
+      PULSAR_PREFIX_brokerClientAuthenticationPlugin: org.apache.pulsar.client.impl.auth.AuthenticationToken
+      PULSAR_PREFIX_tokenPublicKey: file:///mnt/secrets/my-public.key
+      # --- MQTT (MoP) auth: enforce the cluster JWT on MQTT too ---
+      # MoP authentication defaults OFF even when Pulsar auth is on, so without these
+      # MQTT (broker :1883 and proxy :5682) is an UNAUTHENTICATED backdoor. With them,
+      # clients authenticate by sending the JWT as the MQTT CONNECT password.
+      PULSAR_PREFIX_mqttAuthenticationEnabled: "true"
+      PULSAR_PREFIX_mqttAuthenticationMethods: token
+      PULSAR_PREFIX_mqttAuthorizationEnabled: "true"
+      # --- Message REST API: produce/consume over HTTP via the rest-servlet ---
+      # Served on the broker web port (8080); reached externally through the Pulsar proxy
+      # LB (pulsar.private-cloud.internal:8080). Token-authed like the rest of the cluster.
+      # POST /admin/rest/topics/v1/{domain}/{tenant}/{namespace}/{topic}/message
+      PULSAR_PREFIX_pulsarRestMessagingServiceEnabled: "true"
+  pod:
+    resources:
+      requests:
+        cpu: "1"
+        memory: 2Gi
+    secretRefs:
+      - mountPath: /mnt/secrets
+        secretName: token-public-key
+    vars:
+      - name: brokerClientAuthenticationParameters
+        valueFrom:
+          secretKeyRef:
+            name: broker-admin
+            key: token
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            cloud.streamnative.io/cluster: private-cloud
+            cloud.streamnative.io/component: broker
+    securityContext:
+      runAsNonRoot: true
+---
+apiVersion: pulsar.streamnative.io/v1alpha1
+kind: PulsarProxy
+metadata:
+  name: private-cloud
+  namespace: pulsar
+  annotations:
+    cloud.streamnative.io/enable-config-prefix: "false"
+  labels:
+    k8s.streamnative.io/coordinator-name: private-cloud
+spec:
+  image: streamnative/private-cloud:4.2.1.4
+  replicas: 1
+  brokerAddress: private-cloud-broker
+  config:
+    clientAuth:
+      jwt:
+        secret: proxy-admin
+    custom:
+      PULSAR_PREFIX_authenticationEnabled: "true"
+      PULSAR_PREFIX_authenticateOriginalAuthData: "true"
+      PULSAR_PREFIX_forwardAuthorizationCredentials: "true"
+      PULSAR_PREFIX_authenticationProviders: org.apache.pulsar.broker.authentication.AuthenticationProviderToken
+      PULSAR_PREFIX_brokerClientAuthenticationPlugin: org.apache.pulsar.client.impl.auth.AuthenticationToken
+      PULSAR_PREFIX_superUserRoles: proxy-admin
+      PULSAR_PREFIX_tokenPublicKey: file:///mnt/secrets/my-public.key
+  pod:
+    annotations:
+      prometheus.io/port: "8080"
+      prometheus.io/scrape: "true"
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+    secretRefs:
+      - mountPath: /mnt/secrets
+        secretName: token-public-key
+    vars:
+      - name: brokerClientAuthenticationParameters
+        valueFrom:
+          secretKeyRef:
+            name: proxy-admin
+            key: token
+    securityContext:
+      runAsNonRoot: true
