@@ -1,0 +1,389 @@
+# StreamNative Private Cloud — Oxia-backed cluster (no ZooKeeper).
+#
+# Based on the v2 Oxia manifest:
+#   https://raw.githubusercontent.com/streamnative/private-cloud/main/oxia/pulsar-oxia.yaml
+#
+# Local-lab customizations:
+#   - image: streamnative/private-cloud:4.2.1.4 (latest)
+#   - broker replicas: 2, with an operator-managed HPA (autoScalingPolicy)
+#     scaling on CPU (60% util) between 2 and 6 replicas.
+#   - resources: broker / bookie / oxia each request 1 core + 4Gi
+#   - BookKeeper storage on local classes: journal -> nvme-raid, ledger -> ssd-raid (200Gi)
+#   - Oxia server data -> nvme-raid
+#   - required podAntiAffinity (hostname) on bookie / oxia so same-type pods
+#     spread one-per-node across the 3 k8s nodes (also avoids local-PVC pinning issues).
+#   - broker uses topologySpreadConstraints (maxSkew 1, ScheduleAnyway) instead:
+#     one broker per node first, then HPA adds extra replicas onto existing nodes.
+#
+# Apply after the operator + license are installed (instead of 01-pulsar-cluster.yaml):
+#   kubectl apply -f ./pulsar-operators/configs/02-pulsar-oxia.yaml
+#
+apiVersion: k8s.streamnative.io/v1alpha1
+kind: PulsarCoordinator
+metadata:
+  name: private-cloud
+  namespace: pulsar
+spec:
+  image: streamnative/private-cloud:4.2.1.4
+---
+apiVersion: k8s.streamnative.io/v1alpha1
+kind: OxiaCluster
+metadata:
+  annotations:
+    cloud.streamnative.io/config-profile: default-config-v2
+  labels:
+    k8s.streamnative.io/coordinator-name: private-cloud
+  name: private-cloud
+  namespace: pulsar
+spec:
+  monitoringEnabled: false
+  image: oxia/oxia:0.16.7
+  imagePullPolicy: IfNotPresent
+  server:
+    replicas: 3
+    resources:
+      requests:
+        cpu: "1"
+        memory: 4Gi
+    pod:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  cloud.streamnative.io/cluster: private-cloud
+                  cloud.streamnative.io/component: oxia
+              topologyKey: kubernetes.io/hostname
+    volumeClaimSpec:
+      accessModes:
+        - ReadWriteOnce
+      storageClassName: nvme-raid
+      resources:
+        requests:
+          storage: 4Gi
+---
+apiVersion: k8s.streamnative.io/v1alpha1
+kind: OxiaNamespace
+metadata:
+  name: private-cloud-broker
+  namespace: pulsar
+spec:
+  namespaceConfig:
+    name: broker
+    initialShardCount: 1
+    replicationFactor: 3
+    notificationsEnabled: true
+  clusterRef:
+    name: private-cloud
+    namespace: pulsar
+  ownerRef:
+    name: private-cloud
+    namespace: pulsar
+---
+apiVersion: k8s.streamnative.io/v1alpha1
+kind: OxiaNamespace
+metadata:
+  name: private-cloud-bookkeeper
+  namespace: pulsar
+spec:
+  namespaceConfig:
+    name: bookkeeper
+    initialShardCount: 1
+    replicationFactor: 3
+    notificationsEnabled: true
+  clusterRef:
+    name: private-cloud
+    namespace: pulsar
+  ownerRef:
+    name: private-cloud
+    namespace: pulsar
+---
+apiVersion: k8s.streamnative.io/v1alpha1
+kind: OxiaNamespace
+metadata:
+  name: private-cloud-pulsar-schema
+  namespace: pulsar
+spec:
+  namespaceConfig:
+    name: pulsar-schema
+    initialShardCount: 1
+    replicationFactor: 3
+    notificationsEnabled: true
+  clusterRef:
+    name: private-cloud
+    namespace: pulsar
+  ownerRef:
+    name: private-cloud
+    namespace: pulsar
+---
+apiVersion: k8s.streamnative.io/v1alpha1
+kind: OxiaNamespace
+metadata:
+  name: private-cloud-kafka-schema
+  namespace: pulsar
+spec:
+  namespaceConfig:
+    name: kafka-schema
+    initialShardCount: 1
+    replicationFactor: 3
+    notificationsEnabled: true
+  clusterRef:
+    name: private-cloud
+    namespace: pulsar
+  ownerRef:
+    name: private-cloud
+    namespace: pulsar
+---
+apiVersion: k8s.streamnative.io/v1alpha1
+kind: OxiaNamespace
+metadata:
+  name: private-cloud-function
+  namespace: pulsar
+spec:
+  namespaceConfig:
+    name: function
+    initialShardCount: 1
+    replicationFactor: 3
+    notificationsEnabled: true
+  clusterRef:
+    name: private-cloud
+    namespace: pulsar
+  ownerRef:
+    name: private-cloud
+    namespace: pulsar
+---
+apiVersion: bookkeeper.streamnative.io/v1alpha1
+kind: BookKeeperCluster
+metadata:
+  name: private-cloud
+  namespace: pulsar
+  annotations:
+    cloud.streamnative.io/config-profile: default-config-v2
+    cloud.streamnative.io/enable-config-prefix: "false"
+  labels:
+    k8s.streamnative.io/coordinator-name: private-cloud
+spec:
+  image: streamnative/private-cloud:4.2.1.4
+  replicas: 3
+  # Use the oxia namespace address for bookie metadata
+  metadataServiceUri: metadata-store:oxia://private-cloud-oxia.pulsar.svc.cluster.local:6648/bookkeeper
+  storage:
+    journal:
+      numDirsPerVolume: 1
+      numVolumes: 1
+      volumeClaimTemplate:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: nvme-raid
+        resources:
+          requests:
+            storage: 30Gi
+    ledger:
+      numDirsPerVolume: 1
+      numVolumes: 1
+      volumeClaimTemplate:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: ssd-raid
+        resources:
+          requests:
+            storage: 200Gi
+    reclaimPolicy: Delete
+  pod:
+    resources:
+      requests:
+        cpu: "1"
+        memory: 4Gi
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                cloud.streamnative.io/cluster: private-cloud
+                cloud.streamnative.io/component: bookie
+            topologyKey: kubernetes.io/hostname
+    securityContext:
+      runAsNonRoot: true
+  autoRecovery:
+    replicas: 1
+    pod:
+      annotations:
+        prometheus.io/port: "8000"
+        prometheus.io/scrape: "true"
+      resources:
+        requests:
+          cpu: 200m
+          memory: 512Mi
+---
+apiVersion: pulsar.streamnative.io/v1alpha1
+kind: PulsarBroker
+metadata:
+  name: private-cloud
+  namespace: pulsar
+  annotations:
+    cloud.streamnative.io/config-profile: default-config-v2
+    cloud.streamnative.io/enable-config-prefix: "false"
+  labels:
+    k8s.streamnative.io/coordinator-name: private-cloud
+spec:
+  image: streamnative/private-cloud:4.2.1.4
+  replicas: 2
+  # Operator-managed HPA. Brokers spread one-per-node first (topologySpreadConstraints
+  # in pod.spec below), then HPA can add more onto existing nodes up to maxReplicas
+  # (6 = up to 2 brokers per node across 3 nodes).
+  autoScalingPolicy:
+    minReplicas: 2
+    maxReplicas: 6
+    metrics:
+      - type: Resource
+        resource:
+          name: cpu
+          target:
+            type: Utilization
+            averageUtilization: 60
+  # TLS (encryption in transit). The operator mounts the cert-manager secret at
+  # /etc/tls/pulsar-broker/ and configures BOTH the web TLS port (8443) and the
+  # binary TLS listener (cluster_tls:pulsar+ssl://...:6651 via advertisedListeners
+  # /bindAddresses). Do NOT also set brokerServicePortTls — it double-binds 6651.
+  tls:
+    enabled: true
+    certSecretName: pulsar-server-tls
+    trustCertsEnabled: true
+  bkMetadataServiceUri: metadata-store:oxia://private-cloud-oxia.pulsar.svc.cluster.local:6648/bookkeeper
+  # Use the oxia namespace address for broker metadata
+  metadataStoreUrl: oxia://private-cloud-oxia.pulsar.svc.cluster.local:6648/broker
+  # Use the oxia namespace address for broker configuration store
+  configurationMetadataStoreUrl: oxia://private-cloud-oxia.pulsar.svc.cluster.local:6648/broker
+  config:
+    clusterName: private-cloud
+    useStorageCatalog: true
+    # JWT/token auth: the operator wires the broker's internal client identity
+    # (brokerClientAuthenticationParameters) from the broker-admin token secret.
+    clientAuth:
+      jwt:
+        secret: broker-admin
+    custom:
+      PULSAR_PREFIX_metadataStoreUrl: oxia://private-cloud-oxia.pulsar.svc.cluster.local:6648/broker
+      PULSAR_PREFIX_configurationMetadataStoreUrl: oxia://private-cloud-oxia.pulsar.svc.cluster.local:6648/broker
+      PULSAR_PREFIX_enablePackagesManagement: "false"
+      PULSAR_PREFIX_kafkaGroupOffsetsStoreInMetadata: "true"
+      PULSAR_PREFIX_kafkaProducerStateStoreInMetadata: "true"
+      PULSAR_PREFIX_kafkaSchemaRegistryStoreInOxia: "true"
+      PULSAR_PREFIX_oxiaSchemaStorageUrl: oxia://private-cloud-oxia.pulsar.svc.cluster.local:6648/pulsar-schema
+      PULSAR_PREFIX_oxiaSchemaRegistryUrl: oxia://private-cloud-oxia.pulsar.svc.cluster.local:6648/kafka-schema
+      PULSAR_PREFIX_schemaRegistryUrl: oxia://private-cloud-oxia.pulsar.svc.cluster.local:6648/kafka-schema
+      PULSAR_PREFIX_schemaRegistryStorageClassName: io.streamnative.pulsar.schema.OxiaSchemaStorageFactory
+      PULSAR_PREFIX_topicPoliciesServiceClassName: io.streamnative.pulsar.OxiaTopicPoliciesService
+      # --- JWT/token authentication (per StreamNative private-cloud JWT auth doc).
+      # Keys are PULSAR_PREFIX_-prefixed because this cluster sets
+      # enable-config-prefix=false (operator passes config.custom through verbatim).
+      PULSAR_PREFIX_authenticationEnabled: "true"
+      PULSAR_PREFIX_authenticateOriginalAuthData: "true"
+      PULSAR_PREFIX_authenticationProviders: org.apache.pulsar.broker.authentication.AuthenticationProviderToken
+      PULSAR_PREFIX_authorizationEnabled: "true"
+      PULSAR_PREFIX_authorizationProvider: org.apache.pulsar.broker.authorization.PulsarAuthorizationProvider
+      PULSAR_PREFIX_superUserRoles: broker-admin,proxy-admin
+      # proxy-admin is a proxy role, so the broker trusts it to forward the
+      # original client principal (required for client auth via the proxy).
+      PULSAR_PREFIX_proxyRoles: proxy-admin
+      PULSAR_PREFIX_brokerClientAuthenticationPlugin: org.apache.pulsar.client.impl.auth.AuthenticationToken
+      PULSAR_PREFIX_tokenPublicKey: file:///mnt/secrets/my-public.key
+    function:
+      enabled: false
+      mesh:
+        # Note:
+        # For Oxia based clusters with Function Mesh, need to make the package service with io.streamnative.packages.storage.cloud.CloudStorageProvider.
+        # Otherwise the functions and packages feature should be disabled.
+        uploadEnabled: false
+  pod:
+    resources:
+      requests:
+        cpu: "1"
+        memory: 4Gi
+    # Mount the JWT public key for token validation.
+    secretRefs:
+      - mountPath: /mnt/secrets
+        secretName: token-public-key
+    vars:
+      - name: brokerClientAuthenticationParameters
+        valueFrom:
+          secretKeyRef:
+            name: broker-admin
+            key: token
+    # Brokers are stateless, so they don't need hard one-per-node placement.
+    # topologySpreadConstraints fills one broker per node first, then balances
+    # additional replicas (HPA scale-up beyond 3) evenly onto existing nodes
+    # (maxSkew 1 + ScheduleAnyway). oxia/bookie keep required anti-affinity.
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            cloud.streamnative.io/cluster: private-cloud
+            cloud.streamnative.io/component: broker
+    securityContext:
+      runAsNonRoot: true
+---
+apiVersion: k8s.streamnative.io/v1alpha1
+kind: StorageCatalog
+metadata:
+  name: private-cloud
+  namespace: pulsar
+spec:
+  oxiaMetadataServiceUrl: oxia://private-cloud-oxia.pulsar.svc.cluster.local:6648/broker
+  schemaStorageUrl: oxia://private-cloud-oxia.pulsar.svc.cluster.local:6648/pulsar-schema
+  schemaRegistryUrl: oxia://private-cloud-oxia.pulsar.svc.cluster.local:6648/kafka-schema
+  schemaRegistryStorageClassName: io.streamnative.pulsar.schema.OxiaSchemaStorageFactory
+---
+apiVersion: pulsar.streamnative.io/v1alpha1
+kind: PulsarProxy
+metadata:
+  name: private-cloud
+  namespace: pulsar
+  annotations:
+    cloud.streamnative.io/config-profile: default-config-v2
+    cloud.streamnative.io/enable-config-prefix: "false"
+  labels:
+    k8s.streamnative.io/coordinator-name: private-cloud
+spec:
+  image: streamnative/private-cloud:4.2.1.4
+  replicas: 1
+  brokerAddress: private-cloud-broker
+  # NOTE: proxy/external (LoadBalancer) TLS is NOT enabled. In operator v0.18.14
+  # neither `certSecretName` nor config.custom TLS gets the proxy Service/LB to
+  # publish the TLS ports (6651/8443), so external clients use plaintext+token.
+  # Broker TLS (below, spec.tls) works for direct/internal connections. Follow-up.
+  config:
+    # JWT/token auth: proxy authenticates clients and forwards their identity
+    # to the broker (authenticateOriginalAuthData + forwardAuthorizationCredentials).
+    clientAuth:
+      jwt:
+        secret: proxy-admin
+    custom:
+      PULSAR_PREFIX_authenticationEnabled: "true"
+      PULSAR_PREFIX_authenticateOriginalAuthData: "true"
+      PULSAR_PREFIX_forwardAuthorizationCredentials: "true"
+      PULSAR_PREFIX_authenticationProviders: org.apache.pulsar.broker.authentication.AuthenticationProviderToken
+      PULSAR_PREFIX_brokerClientAuthenticationPlugin: org.apache.pulsar.client.impl.auth.AuthenticationToken
+      PULSAR_PREFIX_superUserRoles: proxy-admin
+      PULSAR_PREFIX_tokenPublicKey: file:///mnt/secrets/my-public.key
+  pod:
+    annotations:
+      prometheus.io/port: "8080"
+      prometheus.io/scrape: "true"
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+    secretRefs:
+      - mountPath: /mnt/secrets
+        secretName: token-public-key
+    vars:
+      - name: brokerClientAuthenticationParameters
+        valueFrom:
+          secretKeyRef:
+            name: proxy-admin
+            key: token
+    securityContext:
+      runAsNonRoot: true

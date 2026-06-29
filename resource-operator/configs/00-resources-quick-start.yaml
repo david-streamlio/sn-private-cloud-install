@@ -1,0 +1,8 @@
+apiVersion: resource.streamnative.io/v1alpha1
+kind: PulsarConnection
+metadata:
+  name: pulsar-connection
+spec:
+  adminServiceURL: http://<BROKER-URL>:8080
+  brokerServiceURL: pulsar://<BROKER-URL>:6650
+  clusterName: brokers
